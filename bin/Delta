@@ -1,0 +1,389 @@
+#!/data/data/com.termux/files/usr/bin/bash
+
+VERSION="1.0.0"
+CONFIG="$HOME/.delta_config"
+STORAGE="$HOME/DeltaStorage"
+
+# Configuration
+if [ ! -f "$CONFIG" ]; then
+cat > "$CONFIG" <<'EOF'
+DELTA_NAME="YB-Jeorgie"
+TEXT_COLOR="36"
+BG_COLOR="#101020"
+DEVICE_OVERRIDE=""
+EOF
+fi
+
+source "$CONFIG"
+
+DEVELOPER_FILE="$HOME/.delta_developer"
+if [ ! -s "$DEVELOPER_FILE" ]; then
+    clear
+    echo "================================"
+    echo "    DELTA FIRST-LAUNCH SETUP"
+    echo "================================"
+    read -rp "Developer username: " devname
+    if [[ "$devname" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        printf "%s@User\n" "$devname" > "$DEVELOPER_FILE"
+    else
+        echo "Invalid username. Using YB-Jeorgie@User"
+        printf "%s\n" "YB-Jeorgie@User" > "$DEVELOPER_FILE"
+    fi
+fi
+DEVELOPER="$(cat "$DEVELOPER_FILE")"
+
+DELTA_NAME="${DELTA_NAME:-YB-Jeorgie}"
+TEXT_COLOR="${TEXT_COLOR:-36}"
+BG_COLOR="${BG_COLOR:-#101020}"
+DEVICE_OVERRIDE="${DEVICE_OVERRIDE:-}"
+
+# Automatic Android device detection
+detect_device() {
+    if [ -n "$DEVICE_OVERRIDE" ]; then
+        DEVICE="$DEVICE_OVERRIDE"
+        return
+    fi
+
+    manufacturer=$(getprop ro.product.manufacturer 2>/dev/null)
+    model=$(getprop ro.product.model 2>/dev/null)
+    market=$(getprop ro.product.marketname 2>/dev/null)
+
+    if [ -n "$market" ]; then
+        DEVICE="$market"
+    elif [ -n "$model" ]; then
+        DEVICE="$manufacturer $model"
+    elif [ -n "$manufacturer" ]; then
+        DEVICE="$manufacturer Android Device"
+    else
+        DEVICE="Unknown Device"
+    fi
+}
+
+detect_device
+
+save_config() {
+    {
+        printf 'DELTA_NAME=%q\n' "$DELTA_NAME"
+        printf 'TEXT_COLOR=%q\n' "$TEXT_COLOR"
+        printf 'BG_COLOR=%q\n' "$BG_COLOR"
+        printf 'DEVICE_OVERRIDE=%q\n' "$DEVICE_OVERRIDE"
+    } > "$CONFIG"
+}
+
+apply_background() {
+    printf '\033]11;%s\007' "$BG_COLOR"
+}
+
+banner() {
+    clear
+    echo -e "\033[${TEXT_COLOR}m"
+    echo "========================================"
+    echo "  ____  _____ _   _____  _             "
+    echo " |  _ \| ____| | |_   _|/ \            "
+    echo " | | | |  _| | |   | | / _ \           "
+    echo " | |_| | |___| |___| |/ ___ \          "
+    echo " |____/|_____|_____|_/_/   \_\         "
+    echo "========================================"
+    echo -e "\033[0m"
+    echo " DELTA TERMINAL v$VERSION"
+    echo " Developer: $DEVELOPER"
+    echo " Device: $DEVICE"
+    echo "========================================"
+}
+
+# Virtual storage
+create_storage() {
+    mkdir -p "$STORAGE"/{Documents,Downloads,Projects,Backups,Temp}
+}
+
+storage_menu() {
+    while true; do
+        banner
+        echo " VIRTUAL STORAGE"
+        echo "----------------------------"
+        echo "Location: $STORAGE"
+        echo "1. Open storage"
+        echo "2. List files"
+        echo "3. Create folder"
+        echo "4. Search files"
+        echo "5. Return"
+        read -rp "Storage >> " choice
+
+        case "$choice" in
+            1)
+                create_storage
+                cd "$STORAGE" || continue
+                echo "Storage location: $PWD"
+                ls -la
+                read -rp "Press ENTER..."
+                ;;
+            2)
+                create_storage
+                find "$STORAGE" -maxdepth 3 -print
+                read -rp "Press ENTER..."
+                ;;
+            3)
+                read -rp "Folder name: " folder
+                if [[ "$folder" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                    mkdir -p "$STORAGE/$folder"
+                    echo "Folder created!"
+                else
+                    echo "Invalid folder name."
+                fi
+                read -rp "Press ENTER..."
+                ;;
+            4)
+                read -rp "Search filename: " term
+                [ -n "$term" ] && find "$STORAGE" -iname "*$term*" -print
+                read -rp "Press ENTER..."
+                ;;
+            5) return ;;
+            *) echo "Invalid choice"; sleep 1 ;;
+        esac
+    done
+}
+
+# Package manager
+package_menu() {
+    while true; do
+        banner
+        echo " TERMUX PACKAGE CENTER"
+        echo "----------------------------"
+        echo "1. Update package lists"
+        echo "2. Upgrade packages"
+        echo "3. Install package"
+        echo "4. Search packages"
+        echo "5. Install Debian environment"
+        echo "6. Launch Debian environment"
+        echo "7. Return"
+        read -rp "Package >> " choice
+
+        case "$choice" in
+            1) pkg update ;;
+            2) pkg upgrade ;;
+            3)
+                read -rp "Package name: " package
+                if [[ "$package" =~ ^[a-zA-Z0-9+_.-]+$ ]]; then
+                    pkg install "$package"
+                else
+                    echo "Invalid package name."
+                fi
+                ;;
+            4)
+                read -rp "Search package: " package
+                pkg search "$package"
+                ;;
+            5)
+                pkg install proot-distro
+                proot-distro install debian
+                ;;
+            6)
+                if command -v proot-distro >/dev/null 2>&1; then
+                    proot-distro login debian
+                else
+                    echo "Install proot-distro first."
+                fi
+                ;;
+            7) return ;;
+            *) echo "Invalid choice" ;;
+        esac
+    done
+}
+
+# Device customization
+device_settings() {
+    banner
+    echo " DEVICE SETTINGS"
+    echo "----------------------------"
+    echo "Detected device: $DEVICE"
+    echo "1. Edit device display name"
+    echo "2. Automatic detection"
+    echo "3. Return"
+    read -rp "Device >> " choice
+
+    case "$choice" in
+        1)
+            read -rp "Enter device name: " newdevice
+            if [[ "$newdevice" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                DEVICE_OVERRIDE="$newdevice"
+                save_config
+                detect_device
+                echo "Device display updated!"
+            else
+                echo "Invalid device name."
+            fi
+            read -rp "Press ENTER..."
+            ;;
+        2)
+            DEVICE_OVERRIDE=""
+            save_config
+            detect_device
+            echo "Automatic detection restored: $DEVICE"
+            read -rp "Press ENTER..."
+            ;;
+        3) return ;;
+    esac
+}
+
+# Terminal customization
+customize() {
+    banner
+    echo " TERMINAL CUSTOMIZER"
+    echo "1. Change username"
+    echo "2. Change background"
+    echo "3. Change text color"
+    read -rp "Choice: " choice
+
+    case "$choice" in
+        1)
+            read -rp "New username: " newname
+            if [[ "$newname" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                DELTA_NAME="$newname"
+                save_config
+            else
+                echo "Invalid username."
+            fi
+            ;;
+        2)
+            read -rp "HEX background: " bg
+            if [[ "$bg" =~ ^#[a-fA-F0-9]{6}$ ]]; then
+                BG_COLOR="$bg"
+                save_config
+                apply_background
+            else
+                echo "Invalid color."
+            fi
+            ;;
+        3)
+            echo "31 Red | 32 Green | 33 Yellow"
+            echo "34 Blue | 35 Magenta | 36 Cyan | 37 White"
+            read -rp "Color: " color
+            case "$color" in
+                31|32|33|34|35|36|37)
+                    TEXT_COLOR="$color"
+                    save_config
+                    ;;
+                *) echo "Invalid color." ;;
+            esac
+            ;;
+    esac
+    read -rp "Press ENTER..."
+}
+
+# Storage scanner
+storage_search() {
+    banner
+    if [ ! -d "$HOME/storage/shared" ]; then
+        echo "Run termux-setup-storage first."
+        read -rp "Press ENTER..."
+        return
+    fi
+
+    read -rp "Filename to search: " term
+    [ -n "$term" ] &&
+        find "$HOME/storage/shared" -iname "*$term*" -print 2>/dev/null
+    read -rp "Press ENTER..."
+}
+
+usb_scan() {
+    banner
+    found=0
+
+    for p in /storage/* /mnt/media_rw/*; do
+        [ -d "$p" ] || continue
+        case "$p" in
+            /storage/emulated|/storage/self) continue ;;
+        esac
+        echo "[EXTERNAL STORAGE] $p"
+        found=1
+    done
+
+    [ "$found" -eq 0 ] && echo "No accessible external storage found."
+    read -rp "Press ENTER..."
+}
+
+info() {
+    banner
+    echo ""
+    echo " DELTA TERMINAL INFORMATION"
+    echo "----------------------------"
+    echo "Version: $VERSION"
+    echo "Developer: $DELTA_NAME"
+    echo "Device: $DEVICE"
+    echo "Shell: Bash"
+    echo "Platform: Android / Termux"
+    echo ""
+    echo "FEATURES:"
+    echo "- Automatic device detection"
+    echo "- Manual device name override"
+    echo "- Protected device prompt"
+    echo "- Background and text customization"
+    echo "- Virtual storage"
+    echo "- Internal storage search"
+    echo "- USB storage scanner"
+    echo "- Termux package center"
+    echo "- Debian via proot-distro"
+    echo "- Persistent settings"
+    echo ""
+    echo "COMMANDS:"
+    echo "bash ~/Delta"
+    echo "bash ~/Delta -info"
+    echo "bash ~/Delta -version"
+    echo ""
+    read -rp "Press ENTER..."
+}
+
+main_menu() {
+    create_storage
+
+    while true; do
+        detect_device
+        banner
+        apply_background
+
+        echo ""
+        echo " [1] Terminal customization"
+        echo " [2] Device settings"
+        echo " [3] Virtual storage"
+        echo " [4] Search internal storage"
+        echo " [5] Scan USB storage"
+        echo " [6] Package manager"
+        echo " [7] System information"
+        echo " [8] DELTA information"
+        echo " [0] Exit"
+        echo ""
+        read -rp "DELTA >> " choice
+
+        case "$choice" in
+            1) customize ;;
+            2) device_settings ;;
+            3) storage_menu ;;
+            4) storage_search ;;
+            5) usb_scan ;;
+            6) package_menu ;;
+            7)
+                banner
+                uname -a
+                df -h "$HOME"
+                read -rp "Press ENTER..."
+                ;;
+            8) info ;;
+            0)
+                clear
+                printf '\033]111\007'
+                echo "DELTA TERMINAL CLOSED."
+                exit 0
+                ;;
+            *) echo "Invalid option"; sleep 1 ;;
+        esac
+    done
+}
+
+case "$1" in
+    -info|--info) info ;;
+    -version|--version) echo "DELTA TERMINAL v$VERSION" ;;
+    -help|--help)
+        echo "Usage: bash ~/Delta [-info|-version|-help]"
+        ;;
+    *) main_menu ;;
+esac
